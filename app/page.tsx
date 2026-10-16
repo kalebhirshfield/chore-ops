@@ -11,8 +11,6 @@ type Chore = {
   detail: string;
   cadence: string;
   day: string;
-  accent: string;
-  icon: string;
 };
 type Team = { id: string; name: string };
 type Assignment = {
@@ -23,9 +21,9 @@ type Assignment = {
 };
 
 const chores: Chore[] = [
-  { id: "bathroom", name: "Cleaning bathrooms", detail: "Give both bathrooms a proper reset", cadence: "Every week", day: "Any day", accent: "coral", icon: "✦" },
-  { id: "kitchen", name: "Cleaning kitchen + conservatory", detail: "Wipe down surfaces and sweep the floors", cadence: "Every week", day: "Any day", accent: "mint", icon: "⌁" },
-  { id: "bins", name: "Take out the bins", detail: "General waste and recycling rotate weekly", cadence: "One bin each week", day: "Monday / Tuesday", accent: "amber", icon: "◒" },
+  { id: "bathroom", name: "Cleaning bathrooms", detail: "Give both bathrooms a proper reset", cadence: "Every week", day: "Any day" },
+  { id: "kitchen", name: "Cleaning kitchen + conservatory", detail: "Wipe down surfaces and sweep the floors", cadence: "Every week", day: "Any day" },
+  { id: "bins", name: "Take out the bins", detail: "General waste and recycling rotate weekly", cadence: "One bin each week", day: "Monday / Tuesday" },
 ];
 
 function getMonday(date = new Date()) {
@@ -125,12 +123,24 @@ export default function Home() {
 
   async function toggleCompleted(assignment: Assignment) {
     const completed = Boolean(assignment.completed_at);
+    const nextCompletedAt = completed ? null : new Date().toISOString();
+    const previousAssignments = assignments;
+    setAssignments((current) =>
+      current.map((item) =>
+        item.chore_id === assignment.chore_id
+          ? { ...item, completed_at: nextCompletedAt }
+          : item,
+      ),
+    );
     const { error: updateError } = await supabase
       .from("weekly_assignments")
-      .update({ completed_at: completed ? null : new Date().toISOString(), completed_by: completed ? null : session?.user.id })
+      .update({ completed_at: nextCompletedAt, completed_by: completed ? null : session?.user.id })
       .eq("week_start", weekStart)
       .eq("chore_id", assignment.chore_id);
-    if (updateError) setError(updateError.message);
+    if (updateError) {
+      setAssignments(previousAssignments);
+      setError(updateError.message);
+    }
   }
 
   async function assignChore(choreId: ChoreId, teamId: string) {
@@ -149,23 +159,20 @@ export default function Home() {
   const binDay = bins?.bin_type === "general_waste" ? "Monday" : "Tuesday";
   const binDate = bins ? addDays(weekStart, bins.bin_type === "general_waste" ? 0 : 1) : "";
   const userName = session.user.email?.split("@")[0] || "there";
-  const formattedToday = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(today));
 
   return (
     <main className="app-shell">
       <section className="content" id="dashboard">
-        <header className="topbar"><div className="breadcrumb"><span>This week</span></div><div className="topbar-actions"><div className="user-chip"><span className="avatar">{userName[0].toUpperCase()}</span><span><strong>{userName}</strong><small>Signed in</small></span><button className="sign-out" onClick={() => supabase.auth.signOut()}>Sign out</button></div></div></header>
         <div className="page-wrap">
-          <div className="intro"><div><p className="eyebrow">{formattedToday}</p><h1>Alright, {userName}</h1><p className="subheading">Here&apos;s what needs doing this week.</p></div></div>
+          <div className="intro"><div><h1>Alright, {userName}</h1><p className="subheading">Here&apos;s what needs doing this week.</p></div><button className="logout-button" onClick={() => supabase.auth.signOut()} aria-label="Sign out" title="Sign out">Sign out</button></div>
           {error && <p className="data-error" role="alert">{error}</p>}
-          <div className="stats-grid"><article className="stat-card progress-card"><div className="stat-icon progress-icon">↗</div><div className="stat-copy"><span>This week</span><strong>{progress}% <em>complete</em></strong></div><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><b>{completedCount}<small>/{chores.length}</small></b></div></article><article className="stat-card bin-summary"><div className="stat-icon amber-icon">◷</div><div className="stat-copy"><span>Put out this week</span><strong>{binName}</strong><small>{bins ? `${binDay} · ${displayDate(binDate)}` : "Awaiting schedule"}</small></div></article></div>
+          <div className="stats-grid"><article className="stat-card progress-card"><div className="stat-copy"><span>This week</span><strong>{progress}% <em>complete</em></strong></div><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><b>{completedCount}<small>/{chores.length}</small></b></div></article><article className="stat-card bin-summary"><div className="stat-copy"><span>Put out this week</span><strong>{binName}</strong><small>{bins ? `${binDay} · ${displayDate(binDate)}` : "Awaiting schedule"}</small></div></article></div>
           <div className="section-heading"><div><p className="eyebrow">The jobs</p><h2>This week</h2></div><span className="week-pill">{displayDate(weekStart)} — {displayDate(new Date(new Date(`${weekStart}T12:00:00`).getTime() + 6 * 86400000).toISOString())}</span></div>
           {loading ? <div className="loading-card">Loading this week&apos;s chores...</div> : <div className="chore-list">{chores.map((chore) => {
             const assignment = assignmentFor(chore.id);
             const isDone = Boolean(assignment?.completed_at);
-            return <article className={`chore-row ${isDone ? "is-done" : ""}`} key={chore.id}><button className={`check-box ${isDone ? "checked" : ""}`} disabled={!assignment} onClick={() => assignment && toggleCompleted(assignment)} aria-label={`${isDone ? "Mark" : "Complete"} ${chore.name}`}>{isDone ? "✓" : ""}</button><div className={`chore-icon ${chore.accent}`}>{chore.icon}</div><div className="chore-info"><h3>{chore.name}</h3><p>{chore.id === "bins" && bins ? `Put out ${binName.toLowerCase()} on ${binDay} ${displayDate(binDate)}` : chore.detail}</p></div><div className="cadence"><span>{chore.id === "bins" && bins ? `${binDay} · ${displayDate(binDate)}` : chore.day}</span><small>{chore.cadence}</small></div><div className="assignee"><label><span>Assigned to</span><span className="select-wrap"><select value={assignment ? teams.find((team) => team.id === assignment.team_id)?.name || "" : ""} disabled={!assignment} onChange={(event) => { const team = teams.find((item) => item.name === event.target.value); if (team) void assignChore(chore.id, team.id); }} aria-label={`Assign ${chore.name}`}>{teams.map((team) => <option key={team.id}>{team.name}</option>)}</select><span className="select-arrow" aria-hidden="true">⌄</span></span></label></div><span className={`status ${isDone ? "done" : "open"}`}>{isDone ? "Done" : "To do"}</span></article>;
+            return <article className={`chore-row ${isDone ? "is-done" : ""}`} key={chore.id}><button className={`check-box ${isDone ? "checked" : ""}`} disabled={!assignment} onClick={() => assignment && toggleCompleted(assignment)} aria-label={`${isDone ? "Mark" : "Complete"} ${chore.name}`}>{isDone ? "✓" : ""}</button><div className="chore-info"><h3>{chore.name}</h3><p>{chore.id === "bins" && bins ? `Put out ${binName.toLowerCase()} on ${binDay} ${displayDate(binDate)}` : chore.detail}</p></div><div className="cadence"><span>{chore.id === "bins" && bins ? `${binDay} · ${displayDate(binDate)}` : chore.day}</span><small>{chore.cadence}</small></div><div className="assignee"><label><span>Assigned to</span><span className="select-wrap"><select value={assignment ? teams.find((team) => team.id === assignment.team_id)?.name || "" : ""} disabled={!assignment} onChange={(event) => { const team = teams.find((item) => item.name === event.target.value); if (team) void assignChore(chore.id, team.id); }} aria-label={`Assign ${chore.name}`}>{teams.map((team) => <option key={team.id}>{team.name}</option>)}</select><span className="select-arrow" aria-hidden="true">⌄</span></span></label></div><span className={`status ${isDone ? "done" : "open"}`}>{isDone ? "Done" : "To do"}</span></article>;
           })}</div>}
-          <div className="lower-grid"><section className="rotation-card"><div className="card-heading"><div><p className="eyebrow">This week&apos;s bin</p><h2>{bins ? `${binName} on ${binDay}` : "Bin day"}</h2></div><span className="schedule-icon">◷</span></div><div className="bin-item current-bin"><span className="bin-icon amber-icon">◒</span><div><strong>{bins ? `Put out ${binName.toLowerCase()}` : "Bin schedule loading"}</strong><small>{bins ? `${binDay} · ${displayDate(binDate)}` : "Waiting for this week&apos;s assignment"}</small></div><b>{bins ? "This week" : "—"}</b></div><div className="bin-item"><span className="bin-icon blue-icon">↻</span><div><strong>{binName === "Recycling" ? "General waste" : "Recycling"}</strong><small>Due next week</small></div><b>Next week</b></div></section><section className="people-card"><div className="card-heading"><div><p className="eyebrow">The rotation</p><h2>Household teams</h2></div></div><div className="people-list">{teams.map((team, index) => <div className="person" key={team.id}><span className={`avatar person-${index % 3}`}>{team.name[0]}</span><span>{team.name}</span><small>Weekly team</small></div>)}</div><p className="team-note">Each team takes one different chore every week.</p></section></div>
         </div>
       </section>
     </main>
